@@ -31,7 +31,6 @@ export default function Sidebar({
 
   return (
     <>
-      {/* Overlay móvil */}
       {mobileOpen && (
         <div
           className="fixed inset-0 bg-black/60 z-30 lg:hidden"

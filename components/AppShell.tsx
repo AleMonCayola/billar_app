@@ -17,7 +17,6 @@ export default function AppShell({
       <Sidebar mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
 
       <div className="flex-1 min-w-0">
-        {/* Barra superior móvil */}
         <header className="lg:hidden sticky top-0 z-20 flex items-center gap-3 px-4 py-3 bg-felt-darker border-b border-rail/50">
           <button
             onClick={() => setMobileOpen(true)}

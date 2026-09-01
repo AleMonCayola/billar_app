@@ -13,8 +13,6 @@ export default async function MesasPage() {
     .order("id");
 
   const mesas = (mesasData as Mesa[] | null) ?? [];
-
-  // Orden solicitado: fila 1 = mesas 1,3,5 — fila 2 = mesas 2,4,6
   const porId = new Map(mesas.map((m) => [m.id, m]));
   const orden = [1, 3, 5, 2, 4, 6];
   const mesasOrdenadas = orden

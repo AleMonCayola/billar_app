@@ -16,14 +16,12 @@ export function createClient() {
           try {
             cookieStore.set({ name, value, ...options });
           } catch {
-            // Se puede ignorar si se llama desde un Server Component
           }
         },
         remove(name: string, options: any) {
           try {
             cookieStore.set({ name, value: "", ...options });
           } catch {
-            // Se puede ignorar si se llama desde un Server Component
           }
         },
       },

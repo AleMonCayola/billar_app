@@ -18,7 +18,7 @@ export default function MensualPage() {
   const hoy = new Date();
 
   const [anio, setAnio] = useState(hoy.getFullYear());
-  const [mes, setMes] = useState(hoy.getMonth()); // 0-indexado
+  const [mes, setMes] = useState(hoy.getMonth());
   const [totalesPorDia, setTotalesPorDia] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(true);
 
@@ -85,7 +85,6 @@ export default function MensualPage() {
 
   return (
     <AppShell title="Vista mensual">
-      {/* Selector de mes: accesible (selects nativos) y responsivo */}
       <div className="flex items-center gap-2 mb-5 flex-wrap">
         <button
           onClick={irMesAnterior}
@@ -140,7 +139,7 @@ export default function MensualPage() {
           Total de {MESES[mes]} {anio}
         </span>
         <span className="font-display text-3xl text-cloth-light">
-          {totalMes.toFixed(2)} Bs
+          {totalMes} Bs
         </span>
       </div>
 

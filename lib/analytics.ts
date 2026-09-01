@@ -10,7 +10,6 @@ const MESES = [
 ];
 
 function horaLocal(iso: string): number {
-  // Usamos Intl para no depender de la zona horaria del servidor (Vercel corre en UTC)
   const s = new Intl.DateTimeFormat("en-US", {
     timeZone: TZ,
     hour: "numeric",
@@ -48,7 +47,6 @@ export function calcularStats(
   mesas: Mesa[]
 ): StatsNegocio {
   const totalHistorico = mesas.reduce((a, m) => a + m.historico_total, 0);
-
   const porFecha = new Map<string, number>();
   const porMesEtiqueta = new Map<string, number>();
   const cobrosPorHora = new Array(24).fill(0);
@@ -107,13 +105,44 @@ export function calcularStats(
     ? DIAS_SEMANA[diaMax]
     : null;
 
-  const fechasOrdenadas = [...porFecha.entries()].sort((a, b) =>
-    a[0] < b[0] ? -1 : 1
-  );
-  const ultimosDias = fechasOrdenadas.slice(-14).map(([fecha, total]) => ({
-    fecha: fecha.slice(5).replace("-", "/"), // MM/DD
-    total: Math.round(total * 100) / 100,
-  }));
+const fechasOrdenadas = [...porFecha.keys()].sort((a, b) => a.localeCompare(b));
+
+if (fechasOrdenadas.length === 0) {
+    return {
+      totalHistorico,
+      diasConVentas,
+      promedioDiario,
+      mejorMes,
+      mesaEstrella,
+      porHora,
+      horaPico,
+      porDiaSemana,
+      diaPico,
+      ultimosDias: [],
+    };
+  }
+
+  const ultimaFechaStr = fechasOrdenadas[fechasOrdenadas.length - 1];
+  const [uAnio, uMes, uDia] = ultimaFechaStr.split("-").map(Number);
+  const baseDate = new Date(uAnio, uMes - 1, uDia);
+  const ultimosDias: { fecha: string; total: number }[] = [];
+
+  for (let i = 9; i >= 0; i--) {
+    const d = new Date(baseDate);
+    d.setDate(d.getDate() - i);
+
+    const YYYY = d.getFullYear();
+    const MM = String(d.getMonth() + 1).padStart(2, "0");
+    const DD = String(d.getDate()).padStart(2, "0");
+
+    const iso = `${YYYY}-${MM}-${DD}`;
+    const total = porFecha.get(iso) ?? 0;
+
+    ultimosDias.push({
+      fecha: `${DD}/${MM}`,
+      total: Math.round(total * 100) / 100,
+    });
+  }
 
   return {
     totalHistorico,

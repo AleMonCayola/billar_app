@@ -6,22 +6,22 @@ import { BLOQUES, calcularPrecioLibre, formatearTiempo } from "@/lib/pricing";
 import type { Mesa, Sesion } from "@/types";
 import ConfirmModal from "./ConfirmModal";
 
-// Colores clásicos de bolas de billar 1-6, para el badge numerado de cada mesa
 const COLOR_BOLA: Record<number, string> = {
-  1: "#D4A24C", // amarillo/latón
-  2: "#2653C7", // azul
-  3: "#C7302B", // rojo
-  4: "#5B2A86", // morado
-  5: "#D4671E", // naranja
-  6: "#1F7248", // verde
+  1: "#D4A24C",
+  2: "#2653C7",
+  3: "#C7302B",
+  4: "#5B2A86",
+  5: "#D4671E",
+  6: "#1F7248",
 };
 
 export default function MesaCard({ mesa }: { mesa: Mesa }) {
   const supabase = createClient();
   const [sesion, setSesion] = useState<Sesion | null>(null);
-  const [, setTick] = useState(0); // fuerza re-render cada segundo
+  const [, setTick] = useState(0);
   const [loading, setLoading] = useState(false);
   const [confirmandoCancelar, setConfirmandoCancelar] = useState(false);
+  const [cobroPreview, setCobroPreview] = useState<{ minutos: number; monto: number } | null>(null);
   const [arrastrando, setArrastrando] = useState(false);
   const [sobreVolada, setSobreVolada] = useState(false);
   const [moviendo, setMoviendo] = useState(false);
@@ -64,13 +64,6 @@ export default function MesaCard({ mesa }: { mesa: Mesa }) {
           event: "*",
           schema: "public",
           table: "sesiones",
-          // Sin filtro: cualquier cambio en sesiones (de cualquier mesa) nos
-          // hace re-consultar la nuestra. Esto es necesario para el
-          // arrastrar-y-soltar: si ESTA mesa pierde su sesión porque se movió
-          // a otra mesa, Supabase solo notifica según el mesa_id NUEVO de la
-          // fila, así que filtrar por nuestro propio id nos dejaría "ciegos"
-          // ante ese cambio. Con 6 mesas, volver a consultar en cada cambio
-          // es insignificante en costo.
         },
         () => cargarSesionActiva()
       )
@@ -91,10 +84,6 @@ export default function MesaCard({ mesa }: { mesa: Mesa }) {
     };
   }, [mesa.id, cargarSesionActiva, cargarGuantes, supabase]);
 
-  // Respaldo por sondeo: independientemente de si el realtime llega o no,
-  // cada mesa se vuelve a consultar a sí misma sola cada 4s. Con 6 mesas
-  // esto es una carga insignificante, y garantiza que un cambio de mesa_id
-  // (mover/intercambiar) se refleje aunque el realtime falle o tarde.
   useEffect(() => {
     const poll = setInterval(() => {
       cargarSesionActiva();
@@ -151,24 +140,32 @@ export default function MesaCard({ mesa }: { mesa: Mesa }) {
 
   async function iniciarBloque(minutos: number, precio: number) {
     setLoading(true);
-    await supabase.from("sesiones").insert({
+    const { error } = await supabase.from("sesiones").insert({
       mesa_id: mesa.id,
       modo: "bloque",
       minutos_asignados: minutos,
       monto: precio,
       estado: "activa",
     });
+    if (error) {
+      console.error(`[MESA ${mesa.nombre}] Error al iniciar bloque:`, error.message);
+      alert("No se pudo iniciar el tiempo. Revisa la consola (F12).");
+    }
     setLoading(false);
     cargarSesionActiva();
   }
 
   async function iniciarLibre() {
     setLoading(true);
-    await supabase.from("sesiones").insert({
+    const { error } = await supabase.from("sesiones").insert({
       mesa_id: mesa.id,
       modo: "libre",
       estado: "activa",
     });
+    if (error) {
+      console.error(`[MESA ${mesa.nombre}] Error al iniciar tiempo libre:`, error.message);
+      alert("No se pudo iniciar el tiempo. Revisa la consola (F12).");
+    }
     setLoading(false);
     cargarSesionActiva();
   }
@@ -176,38 +173,53 @@ export default function MesaCard({ mesa }: { mesa: Mesa }) {
   async function agregarBloque(minutosExtra: number, precioExtra: number) {
     if (!sesion) return;
     setLoading(true);
-    await supabase
+    const { error } = await supabase
       .from("sesiones")
       .update({
         minutos_asignados: (sesion.minutos_asignados ?? 0) + minutosExtra,
         monto: (sesion.monto ?? 0) + precioExtra,
       })
       .eq("id", sesion.id);
+    if (error) {
+      console.error(`[MESA ${mesa.nombre}] Error al agregar bloque:`, error.message);
+      alert("No se pudo agregar el tiempo. Revisa la consola (F12).");
+    }
     setLoading(false);
     cargarSesionActiva();
   }
 
-  async function cobrar() {
+  function cobrar() {
     if (!sesion) return;
-    setLoading(true);
-
     const minutosFinales =
       sesion.modo === "bloque"
         ? sesion.minutos_asignados ?? 0
         : Math.ceil(elapsedSec / 60);
+    const montoFinal = sesion.modo === "bloque" ? sesion.monto ?? 0 : precioActual;
 
-    const montoFinal =
-      sesion.modo === "bloque" ? sesion.monto ?? 0 : precioActual;
+    setCobroPreview({ minutos: minutosFinales, monto: montoFinal });
+  }
 
-    await supabase
+  async function confirmarCobro() {
+    if (!sesion || !cobroPreview) return;
+    setCobroPreview(null);
+    setLoading(true);
+
+    const { error } = await supabase
       .from("sesiones")
       .update({
         estado: "cobrada",
         fin: new Date().toISOString(),
-        minutos: minutosFinales,
-        monto: montoFinal,
+        minutos: cobroPreview.minutos,
+        monto: cobroPreview.monto,
       })
       .eq("id", sesion.id);
+
+    if (error) {
+      console.error(`[MESA ${mesa.nombre}] Error al cobrar:`, error.message);
+      alert("No se pudo registrar el cobro. Revisa la consola (F12) — la mesa NO se va a limpiar para que no se pierda el cobro.");
+      setLoading(false);
+      return;
+    }
 
     detenerAlarma();
     setLoading(false);
@@ -223,10 +235,16 @@ export default function MesaCard({ mesa }: { mesa: Mesa }) {
     if (!sesion) return;
     setConfirmandoCancelar(false);
     setLoading(true);
-    await supabase
+    const { error } = await supabase
       .from("sesiones")
       .update({ estado: "cancelada", fin: new Date().toISOString() })
       .eq("id", sesion.id);
+    if (error) {
+      console.error(`[MESA ${mesa.nombre}] Error al cancelar:`, error.message);
+      alert("No se pudo cancelar. Revisa la consola (F12).");
+      setLoading(false);
+      return;
+    }
     detenerAlarma();
     setLoading(false);
     setSesion(null);
@@ -236,17 +254,14 @@ export default function MesaCard({ mesa }: { mesa: Mesa }) {
     if (mesaOrigenId === mesa.id) return;
     setMoviendo(true);
 
-    // Toda la lógica (mover o intercambiar) ahora vive en una función de
-    // base de datos (RPC) que corre en una sola transacción atómica —
-    // ver fix_swap_and_realtime.sql. Esto evita estados a medias si algo
-    // se interrumpe entre pasos.
     const { error } = await supabase.rpc("intercambiar_mesas", {
       origen_id: mesaOrigenId,
       destino_id: mesa.id,
     });
 
     if (error) {
-      console.error("Error al mover/intercambiar mesa:", error.message);
+      console.error("[MOVER/INTERCAMBIAR] Error:", error.message);
+      alert("No se pudo mover/intercambiar la mesa. Revisa la consola (F12).");
     }
 
     setMoviendo(false);
@@ -291,20 +306,28 @@ export default function MesaCard({ mesa }: { mesa: Mesa }) {
 
   async function incrementarGuantes() {
     const nuevo = guantes + 1;
-    setGuantes(nuevo); // optimista
-    await supabase
+    setGuantes(nuevo);
+    const { error } = await supabase
       .from("mesas")
       .update({ contador_guantes: nuevo })
       .eq("id", mesa.id);
+    if (error) {
+      console.error(`[MESA ${mesa.nombre}] Error al subir guantes:`, error.message);
+      setGuantes((g) => g - 1);
+    }
   }
 
   async function decrementarGuantes() {
     const nuevo = Math.max(0, guantes - 1);
-    setGuantes(nuevo); // optimista
-    await supabase
+    setGuantes(nuevo);
+    const { error } = await supabase
       .from("mesas")
       .update({ contador_guantes: nuevo })
       .eq("id", mesa.id);
+    if (error) {
+      console.error(`[MESA ${mesa.nombre}] Error al bajar guantes:`, error.message);
+      cargarGuantes();
+    }
   }
 
   const colorBola = COLOR_BOLA[mesa.id] ?? "#2F9E63";
@@ -338,7 +361,6 @@ export default function MesaCard({ mesa }: { mesa: Mesa }) {
         </div>
       )}
 
-      {/* Badge de bola numerada */}
       <div
         className="absolute -top-4 left-5 w-9 h-9 rounded-full flex items-center justify-center font-display font-bold text-sm shadow-lg ring-2 ring-felt-darker"
         style={{
@@ -360,16 +382,13 @@ export default function MesaCard({ mesa }: { mesa: Mesa }) {
         </h2>
         {sesion && !moviendo && (
           <span className="flex items-center gap-1 text-ink-faint text-[10px] uppercase tracking-wider select-none">
-            <GripIcon className="w-3.5 h-3.5" />
-            arrastra para mover
           </span>
         )}
       </div>
 
       <div className="flex items-center justify-between mb-4 px-1">
         <span className="flex items-center gap-1.5 text-ink-muted text-xs uppercase tracking-wider">
-          <GloveIcon className="w-4 h-4" />
-          Guantes
+          # Guantes
         </span>
         <div className="flex items-center gap-2">
           <button
@@ -399,9 +418,6 @@ export default function MesaCard({ mesa }: { mesa: Mesa }) {
 
       {!sesion && (
         <div className="space-y-2">
-          <p className="text-ink-faint text-xs uppercase tracking-wider mb-2">
-            Iniciar tiempo
-          </p>
           <div className="grid grid-cols-3 gap-2">
             {BLOQUES.map((b) => (
               <button
@@ -497,7 +513,7 @@ export default function MesaCard({ mesa }: { mesa: Mesa }) {
               onClick={cobrar}
               className="flex-1 py-2 rounded-lg bg-cloth hover:bg-cloth-light text-felt-darker font-bold transition disabled:opacity-50"
             >
-              Cortar y cobrar {precioActual} Bs
+              Cobrar {precioActual} Bs
             </button>
             <button
               disabled={loading}
@@ -514,12 +530,22 @@ export default function MesaCard({ mesa }: { mesa: Mesa }) {
       <ConfirmModal
         open={confirmandoCancelar}
         title="Cancelar mesa"
-        message={`¿Seguro que quieres cancelar ${mesa.nombre} sin cobrar? Esta acción no se puede deshacer.`}
+        message={`¿Seguro que quieres cancelar ${mesa.nombre} sin cobrar?`}
         confirmLabel="Sí, cancelar"
         cancelLabel="Volver"
         tone="danger"
         onConfirm={confirmarCancelar}
         onCancel={() => setConfirmandoCancelar(false)}
+      />
+
+      <ConfirmModal
+        open={Boolean(cobroPreview)}
+        title="Confirmar cobro"
+        message={`Tiempo transcurrido: ${cobroPreview?.minutos ?? 0} min · Total:  ${cobroPreview?.monto ?? 0} Bs.`}
+        confirmLabel={`Cobrar ${cobroPreview?.monto ?? 0} Bs`}
+        cancelLabel="Volver"
+        onConfirm={confirmarCobro}
+        onCancel={() => setCobroPreview(null)}
       />
     </>
   );

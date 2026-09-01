@@ -4,15 +4,8 @@ import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import AppShell from "@/components/AppShell";
 import ConfirmModal from "@/components/ConfirmModal";
+import { fechaNegocioActual } from "@/lib/businessDate";
 import type { Sesion, Mesa, CierreCaja } from "@/types";
-
-function hoyISO() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
-    2,
-    "0"
-  )}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 export default function CajaPage() {
   const supabase = createClient();
@@ -22,27 +15,33 @@ export default function CajaPage() {
   const [cerrando, setCerrando] = useState(false);
   const [confirmandoCierre, setConfirmandoCierre] = useState(false);
 
+  const fecha = fechaNegocioActual();
+
   const cargar = useCallback(async () => {
     setLoading(true);
-    const fecha = hoyISO();
 
-    const { data: sesionesData } = await supabase
+    const { data: sesionesData, error: errorSesiones } = await supabase
       .from("sesiones")
       .select("*, mesas(*)")
       .eq("fecha", fecha)
       .eq("estado", "cobrada")
       .order("fin", { ascending: false });
 
-    const { data: cierreData } = await supabase
+    const { data: cierreData, error: errorCierre } = await supabase
       .from("cierres_caja")
       .select("*")
       .eq("fecha", fecha)
       .maybeSingle();
 
-    setSesiones((sesionesData as any) ?? []);
+    if (errorSesiones) console.error("[CAJA] Error cargando cobros:", errorSesiones.message);
+    if (errorCierre) console.error("[CAJA] Error cargando cierre:", errorCierre.message);
+
+    const lista = (sesionesData as any) ?? [];
+  
+    setSesiones(lista);
     setCierre(cierreData as CierreCaja | null);
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, fecha]);
 
   useEffect(() => {
     cargar();
@@ -57,23 +56,29 @@ export default function CajaPage() {
   async function confirmarCierreCaja() {
     setConfirmandoCierre(false);
     setCerrando(true);
-    const fecha = hoyISO();
 
+    let error;
     if (cierre) {
-      await supabase
+      ({ error } = await supabase
         .from("cierres_caja")
         .update({
           total,
           cantidad_cobros: sesiones.length,
           closed_at: new Date().toISOString(),
         })
-        .eq("id", cierre.id);
+        .eq("id", cierre.id));
     } else {
-      await supabase.from("cierres_caja").insert({
+      ({ error } = await supabase.from("cierres_caja").insert({
         fecha,
         total,
         cantidad_cobros: sesiones.length,
-      });
+      }));
+    }
+
+    if (error) {
+      console.error("[CAJA] Error al cerrar caja:", error.message);
+      alert("No se pudo cerrar la caja. Revisa la consola (F12) para el detalle del error.");
+    } else {
     }
 
     setCerrando(false);
@@ -82,7 +87,10 @@ export default function CajaPage() {
 
   return (
     <AppShell title="Caja diaria">
-      <div className="flex items-center justify-end mb-4">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <h1 className="text-ink-faint text-s">
+          FECHA ACTUAL: <span className="text-ink-muted font-medium">{fecha.split("-").reverse().join("/")}</span>{" "}
+        </h1>
         <button
           onClick={cerrarCaja}
           disabled={cerrando || sesiones.length === 0}
@@ -126,8 +134,8 @@ export default function CajaPage() {
               <div>
                 <p className="font-semibold text-ink">{s.mesas?.nombre}</p>
                 <p className="text-xs text-ink-faint">
-                  {new Date(s.inicio).toLocaleTimeString()} —{" "}
-                  {s.fin ? new Date(s.fin).toLocaleTimeString() : "-"} (
+                  {new Date(s.inicio).toLocaleTimeString("es-ES", { hour12: false })} —{" "}
+                  {s.fin ? new Date(s.fin).toLocaleTimeString("es-ES", { hour12: false }) : "-"} (
                   {s.minutos} min) ·{" "}
                   {s.modo === "bloque" ? "Bloque" : "Libre"}
                 </p>
@@ -141,7 +149,7 @@ export default function CajaPage() {
       <ConfirmModal
         open={confirmandoCierre}
         title={cierre ? "Actualizar cierre de caja" : "Cerrar caja del día"}
-        message={`El total registrado es de ${total} Bs con ${sesiones.length} cobro${sesiones.length !== 1 ? "s" : ""}. Esto ${cierre ? "actualizará" : "archivará"} el cierre de hoy.`}
+        message={`El total registrado es de ${total} Bs con ${sesiones.length} cobro${sesiones.length !== 1 ? "s" : ""}. Esto ${cierre ? "actualizará" : "archivará"} el cierre del día de negocio ${fecha}.`}
         confirmLabel={cierre ? "Actualizar" : "Cerrar caja"}
         cancelLabel="Volver"
         onConfirm={confirmarCierreCaja}
