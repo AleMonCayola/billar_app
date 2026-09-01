@@ -5,6 +5,7 @@ export interface Mesa {
   id: number;
   nombre: string;
   historico_total: number;
+  contador_guantes?: number;
 }
 
 export interface Sesion {
