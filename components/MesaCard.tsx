@@ -88,7 +88,7 @@ export default function MesaCard({ mesa }: { mesa: Mesa }) {
     const poll = setInterval(() => {
       cargarSesionActiva();
       cargarGuantes();
-    }, 4000);
+    }, 20000);
     return () => clearInterval(poll);
   }, [cargarSesionActiva, cargarGuantes]);
 
