@@ -36,17 +36,35 @@ export default async function InicioPage() {
   const { data: mesasData } = await supabase.from("mesas").select("*");
   const mesas = (mesasData as Mesa[] | null) ?? [];
 
-  const { data: sesionesData } = await supabase
-    .from("sesiones")
-    .select("fecha, inicio, monto")
-    .eq("estado", "cobrada");
+  
+  const sesiones: Pick<Sesion, "fecha" | "inicio" | "monto">[] = [];
+  const TAMANO_PAGINA = 1000;
+  for (let desde = 0; ; desde += TAMANO_PAGINA) {
+    const { data: pagina, error } = await supabase
+      .from("sesiones")
+      .select("fecha, inicio, monto")
+      .eq("estado", "cobrada")
+      .range(desde, desde + TAMANO_PAGINA - 1);
 
-  const sesiones = (sesionesData as Pick<Sesion, "fecha" | "inicio" | "monto">[] | null) ?? [];
+    if (error) {
+      console.error("[INICIO] Error cargando sesiones para analítica:", error.message);
+      break;
+    }
+    if (!pagina || pagina.length === 0) break;
+
+    sesiones.push(...(pagina as Pick<Sesion, "fecha" | "inicio" | "monto">[]));
+    if (pagina.length < TAMANO_PAGINA) break; // última página
+  }
+
+  console.log(`[INICIO] Sesiones cobradas cargadas para analítica: ${sesiones.length}`);
 
   const stats = calcularStats(sesiones, mesas);
 
   return (
     <AppShell title="Inicio">
+      <p className="text-ink-muted mb-6 -mt-2 text-sm">
+        Panorama general del negocio, todo el historial acumulado.
+      </p>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard
@@ -98,11 +116,17 @@ export default async function InicioPage() {
 
       <div className="bg-panel rounded-2xl p-5 border border-rail/40">
         <h2 className="font-display text-lg tracking-wide text-ink mb-1">
-          Tendencia
+          Tendencia — últimos 14 días con ventas
         </h2>
         <p className="text-ink-faint text-xs mb-2">Total cobrado por día</p>
         <GraficoTendencia data={stats.ultimosDias} />
       </div>
+
+      <p className="text-ink-faint text-xs mt-4">
+        Nota: la "hora pico" solo es precisa para cobros registrados desde que
+        la app quedó en uso diario — los datos migrados del sistema anterior no
+        tenían hora exacta guardada.
+      </p>
     </AppShell>
   );
 }

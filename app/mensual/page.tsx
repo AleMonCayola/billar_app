@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import AppShell from "@/components/AppShell";
+import DayDetailModal from "@/components/DayDetailModal";
+import { fechaNegocioActual } from "@/lib/businessDate";
 
 const MESES = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -15,16 +18,22 @@ function pad(n: number) {
 
 export default function MensualPage() {
   const supabase = createClient();
+  const router = useRouter();
   const hoy = new Date();
+  const fechaHoyNegocio = fechaNegocioActual();
 
   const [anio, setAnio] = useState(hoy.getFullYear());
-  const [mes, setMes] = useState(hoy.getMonth());
+  const [mes, setMes] = useState(hoy.getMonth()); // 0-indexado
   const [totalesPorDia, setTotalesPorDia] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(true);
+  const [diaSeleccionado, setDiaSeleccionado] = useState<string | null>(null);
 
   const esMesActual = anio === hoy.getFullYear() && mes === hoy.getMonth();
   const diasEnMes = new Date(anio, mes + 1, 0).getDate();
   const ultimoDiaAMostrar = esMesActual ? hoy.getDate() : diasEnMes;
+
+  const primerDiaSemana = (new Date(anio, mes, 1).getDay() + 6) % 7;
+  const DIAS_SEMANA_HEADER = ["LUN", "MAR", "MIE", "JUE", "VIE", "SAB", "DOM"];
 
   const cargar = useCallback(async () => {
     setLoading(true);
@@ -83,6 +92,19 @@ export default function MensualPage() {
     anio > hoy.getFullYear() ||
     (anio === hoy.getFullYear() && mes >= hoy.getMonth());
 
+  function handleClickDia(dia: number, monto: number) {
+    if (monto <= 0) return;
+
+    const fechaDia = `${anio}-${pad(mes + 1)}-${pad(dia)}`;
+
+    if (fechaDia === fechaHoyNegocio) {
+      router.push("/caja");
+      return;
+    }
+
+    setDiaSeleccionado(fechaDia);
+  }
+
   return (
     <AppShell title="Vista mensual">
       <div className="flex items-center gap-2 mb-5 flex-wrap">
@@ -139,21 +161,42 @@ export default function MensualPage() {
           Total de {MESES[mes]} {anio}
         </span>
         <span className="font-display text-3xl text-cloth-light">
-          {totalMes} Bs
+          {totalMes.toFixed(2)} Bs
         </span>
       </div>
 
       {loading ? (
         <p className="text-ink-muted">Cargando...</p>
       ) : (
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+        <>
+        <div className="grid grid-cols-7 gap-1.5 mb-2">
+          {DIAS_SEMANA_HEADER.map((d) => (
+            <p
+              key={d}
+              className="text-ink-faint text-[11px] uppercase tracking-wider text-center font-medium"
+            >
+              {d}
+            </p>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-7 gap-1.5">
+          {Array.from({ length: primerDiaSemana }, (_, i) => (
+            <div key={`vacio-${i}`} aria-hidden="true" />
+          ))}
           {dias.map((dia) => {
             const monto = totalesPorDia[dia] ?? 0;
             const intensidad = monto > 0 ? Math.max(monto / maxDia, 0.15) : 0;
+            const clicable = monto > 0;
             return (
-              <div
+              <button
                 key={dia}
-                className="rounded-xl p-3 border border-rail/30 text-center"
+                type="button"
+                onClick={() => handleClickDia(dia, monto)}
+                disabled={!clicable}
+                className={`rounded-xl p-2 sm:p-3 border border-rail/30 text-center transition ${
+                  clicable ? "hover:border-chalk/60 cursor-pointer" : "cursor-default"
+                }`}
                 style={{
                   backgroundColor:
                     monto > 0
@@ -161,18 +204,26 @@ export default function MensualPage() {
                       : "rgba(255,255,255,0.02)",
                 }}
               >
-                <p className="text-ink-faint text-xs mb-1">Día {dia}</p>
+                <p className="text-ink-faint text-xs mb-1">{dia}</p>
                 <p
-                  className={`font-display text-lg ${
+                  className={`font-display text-sm sm:text-lg ${
                     monto > 0 ? "text-cloth-light" : "text-ink-faint"
                   }`}
                 >
                   {monto > 0 ? monto.toFixed(0) : "—"}
                 </p>
-              </div>
+              </button>
             );
           })}
         </div>
+        </>
+      )}
+
+      {diaSeleccionado && (
+        <DayDetailModal
+          fecha={diaSeleccionado}
+          onClose={() => setDiaSeleccionado(null)}
+        />
       )}
     </AppShell>
   );
